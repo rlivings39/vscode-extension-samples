@@ -14,7 +14,8 @@ import {
 	DidChangeConfigurationNotification,
 	CompletionItem,
 	CompletionItemKind,
-	TextDocumentPositionParams
+	TextDocumentPositionParams,
+	IConnection
 } from 'vscode-languageserver';
 
 // Create a connection for the server. The connection uses Node's IPC as a transport.
@@ -52,10 +53,30 @@ connection.onInitialize((params: InitializeParams) => {
 			// Tell the client that the server supports code completion
 			completionProvider: {
 				resolveProvider: true
+			},
+			workspace: {
+				workspaceFolders: {
+					changeNotifications: true,
+					supported: true
+				}
 			}
 		}
 	};
 });
+
+// rlivings39: Keep track of workspace folders
+let workspaceFolders = new Set<string>();
+function queueWorkspaceFoldersToIndex() {
+	connection.workspace.getWorkspaceFolders().then((folders) => {
+		folders = folders || [];
+		folders.forEach((folder) => {
+			if (!workspaceFolders.has(folder.uri)) {
+				connection.console.log(`Enqueueing folder ${folder.uri}`);
+				workspaceFolders.add(folder.uri);
+			}
+		})
+	})
+}
 
 connection.onInitialized(() => {
 	if (hasConfigurationCapability) {
@@ -63,8 +84,12 @@ connection.onInitialized(() => {
 		connection.client.register(DidChangeConfigurationNotification.type, undefined);
 	}
 	if (hasWorkspaceFolderCapability) {
+		// rlivings39: Queue up workspace folders on initializtion
+		queueWorkspaceFoldersToIndex();
 		connection.workspace.onDidChangeWorkspaceFolders(_event => {
 			connection.console.log('Workspace folder change event received.');
+			// rlivings39: Enqueue new folders
+			queueWorkspaceFoldersToIndex();
 		});
 	}
 });
